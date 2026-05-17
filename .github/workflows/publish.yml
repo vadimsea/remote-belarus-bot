@@ -29,14 +29,14 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: db-cache
         with:
           path: data
           key: remote-belarus-db-v2
           restore-keys: |
             remote-belarus-db-v2
             remote-belarus-db
-          save-always: true
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -55,3 +55,9 @@ jobs:
           else
             python main.py
           fi
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data
+          key: remote-belarus-db-v2
