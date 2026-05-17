@@ -32,6 +32,9 @@ jobs:
         with:
           path: data
           key: remote-belarus-db-v2
+          restore-keys: |
+            remote-belarus-db-v2
+            remote-belarus-db
           save-always: true
 
       - name: Install dependencies
