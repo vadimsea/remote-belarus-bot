@@ -116,6 +116,22 @@ def is_genuine_remote_work(title: str, description: str) -> bool:
 def _has_onsite_work_signals(text: str) -> bool:
     lower = text.lower()
 
+    for marker in NOT_REMOTE_WORK_MARKERS:
+        if marker in lower:
+            return True
+
+    if re.search(
+        r"\bгибрид\w*\b|\bhybrid\b|частичн\w+ удал|"
+        r"\d[\s/\-–—]*\d?\s*дн\w*\s+в офис|"
+        r"посещени\w+ офис|приезж\w+ в офис|обязательн\w+ в офис|"
+        r"в нашем офисе|в офисе компании|в офисе работодателя|"
+        r"работа в офисе|очный формат|очно[\s\-]|"
+        r"на месте работы|fix\s*desk|open\s*space|"
+        r"только\s+минск|только\s+беларусь.{0,40}офис",
+        lower,
+    ):
+        return True
+
     if re.search(r"чпу|cnc|станок", lower) and re.search(
         r"программист|fanuc|siemens|cam|фрезер", lower
     ):
