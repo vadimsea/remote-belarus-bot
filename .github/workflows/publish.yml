@@ -1,17 +1,24 @@
-# GitHub Actions: cron ненадёжен (может пропускать */5). Несколько расписаний + догон слотов в main.py.
+# Состояние бота: data/seen.db в репозитории (не Actions cache).
 name: Publish to Telegram
 
 on:
   schedule:
-    - cron: "*/15 6-17 * * *"
-    - cron: "5,20,35,50 6-17 * * *"
-    - cron: "8,23,38,53 6-17 * * *"
+    - cron: "*/5 6-17 * * *"
+    - cron: "2,17,32,47 6-17 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
         description: "Тест без отправки в Telegram"
         type: boolean
         default: false
+  push:
+    branches: [main]
+    paths-ignore:
+      - "data/**"
+      - "**.md"
+
+permissions:
+  contents: write
 
 concurrency:
   group: remote-belarus-publish
@@ -23,20 +30,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-
-      - uses: actions/cache/restore@v4
-        id: db-cache
-        with:
-          path: data
-          key: remote-belarus-db-v2
-          restore-keys: |
-            remote-belarus-db-v2
-            remote-belarus-db
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -56,8 +56,19 @@ jobs:
             python main.py
           fi
 
-      - uses: actions/cache/save@v4
-        if: always()
-        with:
-          path: data
-          key: remote-belarus-db-v2
+      - name: Commit bot database
+        if: github.event.inputs.dry_run != 'true' && github.event_name != 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ ! -f data/seen.db ]; then
+            echo "No database file to save"
+            exit 0
+          fi
+          git add -f data/seen.db
+          if git diff --staged --quiet; then
+            echo "Database unchanged"
+            exit 0
+          fi
+          git commit -m "chore: bot state [skip ci]"
+          git push

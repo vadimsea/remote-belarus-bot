@@ -12,8 +12,9 @@ try:
 except Exception:
     MINSK = timezone(timedelta(hours=3))
 
-# Реклама vadzim.by — раз в день до вакансий
+# Реклама vadzim.by — только в этом окне (Минск), раз в день
 PROMO_TIME = time(9, 0)
+PROMO_WINDOW_END = time(9, 35)
 
 # 5 публикаций вакансий в случайное время в окне (Минск)
 SLOTS_PER_DAY = 5
@@ -136,6 +137,13 @@ def get_slot_to_publish(
     return due[0] if due else None
 
 
+def is_promo_in_window(now: Optional[datetime] = None) -> bool:
+    """Реклама только 09:00–09:35 Минск — не в слоты вакансий."""
+    current = now or now_minsk()
+    t = current.time()
+    return PROMO_TIME <= t <= PROMO_WINDOW_END
+
+
 def is_promo_due(
     *,
     promo_posted_today: bool,
@@ -147,6 +155,8 @@ def is_promo_due(
     if force:
         return True
     current = now or now_minsk()
+    if not is_promo_in_window(current):
+        return False
     promo_at = datetime.combine(current.date(), PROMO_TIME, tzinfo=MINSK)
     return current >= promo_at
 

@@ -18,6 +18,7 @@ from remote_jobs.schedule import (
     get_due_slots_to_publish,
     get_slot_to_publish,
     is_promo_due,
+    is_promo_in_window,
     next_slot_hint,
     now_minsk,
     slots_from_times,
@@ -200,18 +201,23 @@ def main() -> int:
         storage.close()
         return code
 
-    # Реклама раз в день — в том же процессе и той же БД, что и вакансия
+    # Реклама только 09:00–09:35 Минск (не при каждом cron-запуске)
     if not args.dry_run and not args.reset_db and not args.clear_channel:
-        promo_code = run_promo(
-            settings,
-            storage,
-            session,
-            dry_run=False,
-            force=args.force_promo,
-        )
-        if promo_code != 0:
-            storage.close()
-            return promo_code
+        current = now_minsk()
+        if args.force_promo or (
+            not storage.promo_posted_today()
+            and is_promo_in_window(current)
+        ):
+            promo_code = run_promo(
+                settings,
+                storage,
+                session,
+                dry_run=False,
+                force=args.force_promo,
+            )
+            if promo_code != 0:
+                storage.close()
+                return promo_code
 
     if args.reset_db and not args.dry_run and not args.force_slot:
         storage.close()
@@ -314,6 +320,14 @@ def main() -> int:
 
         vacancy, score, category_raw = picked
         category: ProfessionCategory = category_raw  # type: ignore[assignment]
+
+        if vacancy.uid not in storage.filter_new([vacancy.uid]):
+            logger.warning(
+                "Пропуск дубля (уже публиковали): %s — %s",
+                vacancy.uid,
+                vacancy.title,
+            )
+            continue
 
         logger.info(
             "Слот %s: [%s/%s] score=%.1f — %s",
