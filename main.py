@@ -198,6 +198,19 @@ def main() -> int:
         storage.close()
         return code
 
+    # Реклама раз в день — в том же процессе и той же БД, что и вакансия
+    if not args.dry_run and not args.reset_db and not args.clear_channel:
+        promo_code = run_promo(
+            settings,
+            storage,
+            session,
+            dry_run=False,
+            force=args.force_promo,
+        )
+        if promo_code != 0:
+            storage.close()
+            return promo_code
+
     if args.reset_db and not args.dry_run and not args.force_slot:
         storage.close()
         return 0

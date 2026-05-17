@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Set
 
 from .models import Vacancy
-from .schedule import SLOTS_PER_DAY, generate_random_slot_times
+from .schedule import SLOTS_PER_DAY, generate_random_slot_times, today_minsk
+
+
+def _day_key(day: Optional[str] = None) -> str:
+    return day or today_minsk().isoformat()
 
 
 class VacancyStorage:
@@ -107,7 +111,7 @@ class VacancyStorage:
         return {uid for uid in ids if uid not in seen}
 
     def posts_today_count(self, day: Optional[str] = None) -> int:
-        day = day or date.today().isoformat()
+        day = _day_key(day)
         row = self._conn.execute(
             "SELECT COUNT(*) FROM daily_slots WHERE day = ?",
             (day,),
@@ -115,7 +119,7 @@ class VacancyStorage:
         return int(row[0]) if row else 0
 
     def get_daily_schedule(self, day: Optional[str] = None) -> List[time]:
-        day = day or date.today().isoformat()
+        day = _day_key(day)
         rows = self._conn.execute(
             """
             SELECT slot_time FROM daily_slot_schedule
@@ -131,7 +135,7 @@ class VacancyStorage:
         count: int = SLOTS_PER_DAY,
         day: Optional[str] = None,
     ) -> List[time]:
-        day = day or date.today().isoformat()
+        day = _day_key(day)
         existing = self.get_daily_schedule(day)
         if len(existing) >= count:
             return existing[:count]
@@ -153,7 +157,7 @@ class VacancyStorage:
         return times
 
     def filled_slots_today(self, day: Optional[str] = None) -> Set[int]:
-        day = day or date.today().isoformat()
+        day = _day_key(day)
         rows = self._conn.execute(
             "SELECT slot_index FROM daily_slots WHERE day = ?",
             (day,),
@@ -161,7 +165,7 @@ class VacancyStorage:
         return {int(row[0]) for row in rows}
 
     def is_slot_filled(self, slot_index: int, day: Optional[str] = None) -> bool:
-        day = day or date.today().isoformat()
+        day = _day_key(day)
         row = self._conn.execute(
             "SELECT 1 FROM daily_slots WHERE day = ? AND slot_index = ?",
             (day, slot_index),
@@ -179,7 +183,7 @@ class VacancyStorage:
         quality_score: float,
         day: Optional[str] = None,
     ) -> None:
-        day = day or date.today().isoformat()
+        day = _day_key(day)
         self._conn.execute(
             """
             INSERT OR REPLACE INTO daily_slots (day, slot_index, vacancy_uid)
@@ -309,7 +313,7 @@ class VacancyStorage:
         return try_pick(None)
 
     def promo_posted_today(self, day: Optional[str] = None) -> bool:
-        day = day or date.today().isoformat()
+        day = _day_key(day)
         row = self._conn.execute(
             "SELECT 1 FROM daily_promo WHERE day = ?",
             (day,),
@@ -317,7 +321,7 @@ class VacancyStorage:
         return row is not None
 
     def mark_promo_posted(self, message_id: int, day: Optional[str] = None) -> None:
-        day = day or date.today().isoformat()
+        day = _day_key(day)
         self._conn.execute(
             """
             INSERT OR REPLACE INTO daily_promo (day, message_id)

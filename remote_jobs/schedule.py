@@ -79,6 +79,10 @@ def now_minsk() -> datetime:
     return datetime.now(MINSK)
 
 
+def today_minsk() -> date:
+    return now_minsk().date()
+
+
 def slot_datetime(day: date, slot: PostSlot) -> datetime:
     return datetime.combine(day, slot.at, tzinfo=MINSK)
 
