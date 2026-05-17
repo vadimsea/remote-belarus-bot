@@ -1,0 +1,59 @@
+# Бесплатный автозапуск 24/7 (GitHub Actions). Расписание в UTC; логика времени — Europe/Minsk в коде.
+# 06:00–17:55 UTC = 09:00–20:55 Минск, каждые 5 минут.
+name: Publish to Telegram
+
+on:
+  schedule:
+    - cron: "*/5 6-17 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Тест без отправки в Telegram"
+        type: boolean
+        default: false
+
+concurrency:
+  group: remote-belarus-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/cache@v4
+        with:
+          path: data
+          key: remote-belarus-db
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ensure data directory
+        run: mkdir -p data
+
+      - name: Promo (09:00 Минск)
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+        run: python main.py --promo
+
+      - name: Publish vacancy slot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python main.py --dry-run --show-schedule
+            python main.py --dry-run
+          else
+            python main.py
+          fi

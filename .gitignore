@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/
+logs/
+*.html
+_vadzim*
+*.code-workspace
+scripts/
