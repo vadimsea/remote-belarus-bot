@@ -15,10 +15,12 @@ from remote_jobs.quality import pick_best_vacancies
 from remote_jobs.promo import build_daily_promo
 from remote_jobs.schedule import (
     format_schedule,
+    get_due_slots_to_publish,
     get_slot_to_publish,
     is_promo_due,
     next_slot_hint,
     now_minsk,
+    slots_from_times,
 )
 from remote_jobs.storage import VacancyStorage
 from remote_jobs.telegram_publisher import TelegramPublisher
@@ -223,30 +225,33 @@ def main() -> int:
 
     current = now_minsk()
     filled = storage.filled_slots_today()
-    slot = get_slot_to_publish(
-        filled,
-        slot_times,
-        now=current,
-        force_slot=args.force_slot,
-    )
 
-    if not args.ignore_schedule and not args.force_slot and slot is None:
-        hint = next_slot_hint(filled, slot_times, now=current)
-        logger.info(
-            "Сейчас %s (Минск). Не время публикации.%s",
-            current.strftime("%H:%M"),
-            f" Следующий слот: {hint}" if hint else " На сегодня слоты закрыты.",
+    if args.force_slot is not None:
+        forced = get_slot_to_publish(
+            filled, slot_times, now=current, force_slot=args.force_slot
         )
-        storage.close()
-        return 0
+        due_slots = [forced] if forced else []
+    elif args.ignore_schedule:
+        due_slots = [
+            s
+            for s in slots_from_times(slot_times)
+            if s.index not in filled
+        ][:1]
+    else:
+        due_slots = get_due_slots_to_publish(filled, slot_times, now=current)
+        # Один пост за запуск GitHub Actions; пропущенные слоты догоняются по очереди
+        due_slots = due_slots[:1]
 
-    if slot is None:
-        logger.error("Нет доступного слота")
-        storage.close()
-        return 1
-
-    if storage.is_slot_filled(slot.index) and not args.force_slot:
-        logger.info("Слот %s уже опубликован сегодня", slot.label)
+    if not due_slots:
+        if not args.ignore_schedule and not args.force_slot:
+            hint = next_slot_hint(filled, slot_times, now=current)
+            logger.info(
+                "Сейчас %s (Минск). Не время публикации.%s",
+                current.strftime("%H:%M"),
+                f" Следующий слот: {hint}" if hint else " На сегодня слоты закрыты.",
+            )
+        else:
+            logger.info("Нет слотов для публикации")
         storage.close()
         return 0
 
@@ -256,10 +261,9 @@ def main() -> int:
         return 0
 
     logger.info(
-        "Канал: %s | Слот: %s (%s) | Заполнено сегодня: %s/%s | Расписание: %s",
+        "Канал: %s | К публикации слотов: %s | Заполнено: %s/%s | Расписание: %s",
         settings.telegram_channel_id,
-        slot.index + 1,
-        slot.label,
+        len(due_slots),
         len(filled),
         settings.daily_post_limit,
         format_schedule(slot_times),
@@ -268,39 +272,6 @@ def main() -> int:
     if args.refresh_queue or storage.queue_size() < 3:
         added = refresh_queue(storage, settings, session, args.source)
         logger.info("Очередь обновлена: +%s вакансий (в очереди %s)", added, storage.queue_size())
-
-    last_source = storage.last_published_source()
-    prefer = "rabota" if last_source == "praca" else "praca" if last_source == "rabota" else None
-
-    allowed = storage.filter_new(storage.queue_uids())
-    picked = storage.pop_best_candidate(allowed_uids=allowed, prefer_source=prefer)
-
-    if not picked and not args.dry_run:
-        added = refresh_queue(storage, settings, session, args.source)
-        logger.info("Очередь пуста, повторный сбор: +%s", added)
-        allowed = storage.filter_new(storage.queue_uids())
-        picked = storage.pop_best_candidate(allowed_uids=allowed, prefer_source=prefer)
-
-    if not picked:
-        logger.info("Нет подходящих вакансий для публикации")
-        storage.close()
-        return 0
-
-    vacancy, score, category_raw = picked
-    category: ProfessionCategory = category_raw  # type: ignore[assignment]
-
-    logger.info(
-        "Выбрана: [%s/%s] score=%.1f — %s",
-        vacancy.source,
-        category,
-        score,
-        vacancy.title,
-    )
-
-    if args.dry_run:
-        logger.info("URL: %s | описание: %s симв.", vacancy.url, len(vacancy.description or ""))
-        storage.close()
-        return 0
 
     publisher = TelegramPublisher(
         bot_token=settings.telegram_bot_token,
@@ -311,24 +282,75 @@ def main() -> int:
         session=session,
     )
 
-    try:
-        _, published = publisher.publish_one(
-            vacancy,
-            category,  # type: ProfessionCategory
-            slot_index=slot.index,
-            slot_label=slot.label,
+    published_count = 0
+    for slot in due_slots:
+        if storage.remaining_daily_quota(settings.daily_post_limit) <= 0:
+            break
+        if storage.is_slot_filled(slot.index) and not args.force_slot:
+            logger.info("Слот %s уже опубликован", slot.label)
+            continue
+
+        last_source = storage.last_published_source()
+        prefer = (
+            "rabota"
+            if last_source == "praca"
+            else "praca"
+            if last_source == "rabota"
+            else None
         )
-    except Exception:
-        logger.exception("Ошибка публикации")
-        storage.enqueue_candidates([(vacancy, score, category)])
-        storage.close()
-        return 1
 
-    storage.mark_slot_published(slot.index, vacancy, category, score)
-    for _, message_id in published:
-        storage.save_message_id(message_id, vacancy.uid)
+        allowed = storage.filter_new(storage.queue_uids())
+        picked = storage.pop_best_candidate(allowed_uids=allowed, prefer_source=prefer)
 
-    logger.info("Опубликовано в слот %s", slot.label)
+        if not picked and not args.dry_run:
+            added = refresh_queue(storage, settings, session, args.source)
+            logger.info("Очередь пуста, повторный сбор: +%s", added)
+            allowed = storage.filter_new(storage.queue_uids())
+            picked = storage.pop_best_candidate(allowed_uids=allowed, prefer_source=prefer)
+
+        if not picked:
+            logger.warning("Нет вакансий для слота %s — остановка", slot.label)
+            break
+
+        vacancy, score, category_raw = picked
+        category: ProfessionCategory = category_raw  # type: ignore[assignment]
+
+        logger.info(
+            "Слот %s: [%s/%s] score=%.1f — %s",
+            slot.label,
+            vacancy.source,
+            category,
+            score,
+            vacancy.title,
+        )
+
+        if args.dry_run:
+            logger.info("URL: %s | описание: %s симв.", vacancy.url, len(vacancy.description or ""))
+            published_count += 1
+            continue
+
+        try:
+            _, published = publisher.publish_one(
+                vacancy,
+                category,
+                slot_index=slot.index,
+                slot_label=slot.label,
+            )
+        except Exception:
+            logger.exception("Ошибка публикации слота %s", slot.label)
+            storage.enqueue_candidates([(vacancy, score, category)])
+            storage.close()
+            return 1
+
+        storage.mark_slot_published(slot.index, vacancy, category, score)
+        for _, message_id in published:
+            storage.save_message_id(message_id, vacancy.uid)
+        published_count += 1
+        filled.add(slot.index)
+        logger.info("Опубликовано в слот %s", slot.label)
+
+    if published_count:
+        logger.info("Готово: опубликовано вакансий за запуск: %s", published_count)
     storage.close()
     return 0
 

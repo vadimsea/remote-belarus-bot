@@ -87,6 +87,37 @@ def slot_datetime(day: date, slot: PostSlot) -> datetime:
     return datetime.combine(day, slot.at, tzinfo=MINSK)
 
 
+def get_due_slots_to_publish(
+    filled_slots: set[int],
+    slot_times: Sequence[time],
+    *,
+    now: Optional[datetime] = None,
+) -> List[PostSlot]:
+    """Все просроченные незаполненные слоты (догон, если GitHub опоздал)."""
+    slots = slots_from_times(slot_times)
+    if not slots:
+        return []
+
+    current = now or now_minsk()
+    today = current.date()
+
+    if current.time() < slot_times[0]:
+        return []
+
+    last_slot = slots[-1]
+    grace_end = slot_datetime(today, last_slot) + GRACE_AFTER_LAST
+    if current > grace_end:
+        return []
+
+    due: List[PostSlot] = []
+    for slot in slots:
+        if slot.index in filled_slots:
+            continue
+        if current >= slot_datetime(today, slot):
+            due.append(slot)
+    return due
+
+
 def get_slot_to_publish(
     filled_slots: set[int],
     slot_times: Sequence[time],
@@ -94,34 +125,15 @@ def get_slot_to_publish(
     now: Optional[datetime] = None,
     force_slot: Optional[int] = None,
 ) -> Optional[PostSlot]:
-    """Какой слот пора заполнить (одна вакансия за запуск)."""
-    slots = slots_from_times(slot_times)
-    if not slots:
-        return None
-
+    """Первый слот из очереди на публикацию."""
     if force_slot is not None:
+        slots = slots_from_times(slot_times)
         if 0 <= force_slot < len(slots):
             return slots[force_slot]
         return None
 
-    current = now or now_minsk()
-    today = current.date()
-
-    if current.time() < slot_times[0]:
-        return None
-
-    last_slot = slots[-1]
-    grace_end = slot_datetime(today, last_slot) + GRACE_AFTER_LAST
-    if current > grace_end:
-        return None
-
-    for slot in slots:
-        if slot.index in filled_slots:
-            continue
-        if current >= slot_datetime(today, slot):
-            return slot
-
-    return None
+    due = get_due_slots_to_publish(filled_slots, slot_times, now=now)
+    return due[0] if due else None
 
 
 def is_promo_due(

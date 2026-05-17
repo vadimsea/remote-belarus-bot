@@ -1,10 +1,11 @@
-# Бесплатный автозапуск 24/7 (GitHub Actions). Расписание в UTC; логика времени — Europe/Minsk в коде.
-# 06:00–17:55 UTC = 09:00–20:55 Минск, каждые 5 минут.
+# GitHub Actions: cron ненадёжен (может пропускать */5). Несколько расписаний + догон слотов в main.py.
 name: Publish to Telegram
 
 on:
   schedule:
-    - cron: "*/5 6-17 * * *"
+    - cron: "*/15 6-17 * * *"
+    - cron: "5,20,35,50 6-17 * * *"
+    - cron: "8,23,38,53 6-17 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -19,7 +20,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +44,7 @@ jobs:
       - name: Ensure data directory
         run: mkdir -p data
 
-      - name: Promo and vacancy (single run, one database)
+      - name: Promo and vacancies
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
