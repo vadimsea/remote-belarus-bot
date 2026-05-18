@@ -11,11 +11,6 @@ on:
         description: "Тест без отправки в Telegram"
         type: boolean
         default: false
-  push:
-    branches: [main]
-    paths-ignore:
-      - "data/**"
-      - "**.md"
 
 permissions:
   contents: write
@@ -44,6 +39,9 @@ jobs:
       - name: Ensure data directory
         run: mkdir -p data
 
+      - name: Sync bot database
+        run: git pull --ff-only origin main
+
       - name: Promo and vacancies
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -61,6 +59,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
           if [ ! -f data/seen.db ]; then
             echo "No database file to save"
             exit 0

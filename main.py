@@ -353,14 +353,6 @@ def main() -> int:
         vacancy, score, category_raw = picked
         category: ProfessionCategory = category_raw  # type: ignore[assignment]
 
-        if vacancy.uid not in storage.filter_new([vacancy.uid]):
-            logger.warning(
-                "Пропуск дубля (уже публиковали): %s — %s",
-                vacancy.uid,
-                vacancy.title,
-            )
-            continue
-
         logger.info(
             "Слот %s: [%s/%s] score=%.1f — %s",
             slot.label,
@@ -375,6 +367,17 @@ def main() -> int:
             published_count += 1
             continue
 
+        if not storage.try_reserve_publish(slot.index, vacancy, category, score):
+            if storage.is_slot_filled(slot.index):
+                logger.info("Слот %s уже занят другим процессом", slot.label)
+                break
+            logger.warning(
+                "Вакансия уже в канале, берём следующую: %s — %s",
+                vacancy.uid,
+                vacancy.title,
+            )
+            continue
+
         try:
             _, published = publisher.publish_one(
                 vacancy,
@@ -384,6 +387,7 @@ def main() -> int:
             )
         except Exception:
             logger.exception("Ошибка публикации слота %s", slot.label)
+            storage.release_publish_reservation(slot.index, vacancy.uid)
             storage.enqueue_candidates([(vacancy, score, category)])
             storage.close()
             return 1

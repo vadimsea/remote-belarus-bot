@@ -183,6 +183,82 @@ class VacancyStorage:
         ).fetchone()
         return row is not None
 
+    def is_vacancy_seen(self, uid: str) -> bool:
+        return uid not in self.filter_new([uid])
+
+    def try_reserve_publish(
+        self,
+        slot_index: int,
+        vacancy: Vacancy,
+        category: Optional[str],
+        quality_score: float,
+        day: Optional[str] = None,
+    ) -> bool:
+        """Атомарно занять слот и вакансию до отправки в Telegram (защита от гонки)."""
+        day = _day_key(day)
+        if self.is_slot_filled(slot_index, day):
+            return False
+        if self.is_vacancy_seen(vacancy.uid):
+            return False
+
+        slot_cursor = self._conn.execute(
+            """
+            INSERT OR IGNORE INTO daily_slots (day, slot_index, vacancy_uid)
+            VALUES (?, ?, ?)
+            """,
+            (day, slot_index, vacancy.uid),
+        )
+        if slot_cursor.rowcount == 0:
+            return False
+
+        seen_cursor = self._conn.execute(
+            """
+            INSERT OR IGNORE INTO seen_vacancies
+                (uid, source, external_id, title, url, category, quality_score, slot_index)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                vacancy.uid,
+                vacancy.source,
+                vacancy.external_id,
+                vacancy.title,
+                vacancy.url,
+                category,
+                quality_score,
+                slot_index,
+            ),
+        )
+        if seen_cursor.rowcount == 0:
+            self._conn.execute(
+                "DELETE FROM daily_slots WHERE day = ? AND slot_index = ?",
+                (day, slot_index),
+            )
+            self._conn.commit()
+            return False
+
+        self._conn.commit()
+        return True
+
+    def release_publish_reservation(
+        self,
+        slot_index: int,
+        vacancy_uid: str,
+        day: Optional[str] = None,
+    ) -> None:
+        day = _day_key(day)
+        self._conn.execute(
+            """
+            DELETE FROM daily_slots
+            WHERE day = ? AND slot_index = ? AND vacancy_uid = ?
+            """,
+            (day, slot_index, vacancy_uid),
+        )
+        self._conn.execute(
+            "DELETE FROM seen_vacancies WHERE uid = ? AND slot_index = ?",
+            (vacancy_uid, slot_index),
+        )
+        self._conn.commit()
+
     def remaining_daily_quota(self, daily_limit: int, day: Optional[str] = None) -> int:
         return max(0, daily_limit - self.posts_today_count(day))
 
