@@ -15,7 +15,8 @@ def _day_key(day: Optional[str] = None) -> str:
 
 
 class VacancyStorage:
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, *, seen_ttl_days: int = 21) -> None:
+        self.seen_ttl_days = seen_ttl_days
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.db_path)
@@ -103,10 +104,20 @@ class VacancyStorage:
         if not ids:
             return set()
         placeholders = ",".join("?" * len(ids))
-        rows = self._conn.execute(
-            f"SELECT uid FROM seen_vacancies WHERE uid IN ({placeholders})",
-            ids,
-        ).fetchall()
+        if self.seen_ttl_days > 0:
+            rows = self._conn.execute(
+                f"""
+                SELECT uid FROM seen_vacancies
+                WHERE uid IN ({placeholders})
+                  AND posted_at >= datetime('now', ?)
+                """,
+                (*ids, f"-{self.seen_ttl_days} days"),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                f"SELECT uid FROM seen_vacancies WHERE uid IN ({placeholders})",
+                ids,
+            ).fetchall()
         seen = {row[0] for row in rows}
         return {uid for uid in ids if uid not in seen}
 

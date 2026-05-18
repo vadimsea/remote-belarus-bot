@@ -61,17 +61,23 @@ def extract_work_formats(item: Dict[str, Any]) -> Set[str]:
     return formats
 
 
-def is_strictly_remote_rabota(item: Dict[str, Any]) -> bool:
+def is_remote_format_only_rabota(item: Dict[str, Any]) -> bool:
+    """Только формат работы (для листинга; полная проверка — на странице вакансии)."""
     formats = extract_work_formats(item)
-    if not formats:
-        schedule = item.get("@workSchedule") or item.get("workSchedule")
-        if schedule != "REMOTE":
-            return False
-    elif not ("REMOTE" in formats and "ON_SITE" not in formats and "HYBRID" not in formats):
+    if formats:
+        return "REMOTE" in formats and "ON_SITE" not in formats
+    schedule = item.get("@workSchedule") or item.get("workSchedule")
+    return schedule == "REMOTE"
+
+
+def is_strictly_remote_rabota(item: Dict[str, Any]) -> bool:
+    if not is_remote_format_only_rabota(item):
         return False
 
     name = (item.get("name") or "").lower()
     desc = (item.get("description") or "").lower()
+    if not desc.strip():
+        return True
     return is_genuine_remote_work(name, desc)
 
 

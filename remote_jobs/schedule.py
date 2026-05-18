@@ -22,6 +22,7 @@ DAY_WINDOW_START = time(10, 0)
 DAY_WINDOW_END = time(19, 0)
 MIN_SLOT_GAP = timedelta(minutes=50)
 GRACE_AFTER_LAST = timedelta(minutes=45)
+CATCHUP_UNTIL = time(23, 0)
 SCHEDULE_SEED_SUFFIX = "v1"
 
 
@@ -105,9 +106,8 @@ def get_due_slots_to_publish(
     if current.time() < slot_times[0]:
         return []
 
-    last_slot = slots[-1]
-    grace_end = slot_datetime(today, last_slot) + GRACE_AFTER_LAST
-    if current > grace_end:
+    catchup_end = datetime.combine(today, CATCHUP_UNTIL, tzinfo=MINSK)
+    if current > catchup_end:
         return []
 
     due: List[PostSlot] = []

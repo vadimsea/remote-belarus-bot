@@ -27,6 +27,7 @@ class Settings:
     db_path: Path
     promo_site_url: str
     promo_channel_url: str
+    seen_ttl_days: int
 
     @classmethod
     def from_env(cls, *, require_telegram: bool = True) -> "Settings":
@@ -58,4 +59,5 @@ class Settings:
             promo_channel_url=os.getenv(
                 "PROMO_CHANNEL_URL", "https://t.me/vadzimby_live"
             ).strip(),
+            seen_ttl_days=int(os.getenv("SEEN_TTL_DAYS", "21")),
         )

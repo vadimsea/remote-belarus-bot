@@ -12,7 +12,7 @@ import requests
 
 from ..filters import (
     is_full_description,
-    is_strictly_remote_rabota,
+    is_remote_format_only_rabota,
 )
 from ..models import Vacancy
 from .details import RabotaDetailFetcher
@@ -21,9 +21,6 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://rabota.by"
 SEARCH_URL = f"{BASE_URL}/search/vacancy"
-BELARUS_COUNTRY_ID = 4
-
-
 class RabotaParser:
     def __init__(
         self,
@@ -68,6 +65,28 @@ class RabotaParser:
         return vacancies
 
     def _collect_listing_stubs(self) -> List[dict]:
+        search_variants = (
+            {"schedule": "remote", "area": "16"},
+            {"area": "16", "text": "удален"},
+            {"area": "16"},
+        )
+        stubs: List[dict] = []
+
+        for variant_index, base_params in enumerate(search_variants):
+            if stubs:
+                break
+            if variant_index:
+                logger.warning(
+                    "Rabota.by: пустой листинг, повтор с параметрами %s",
+                    base_params,
+                )
+            stubs = self._fetch_listing_pages(base_params)
+
+        unique = {stub["external_id"]: stub for stub in stubs}
+        logger.info("Rabota.by: в листинге %s кандидатов (только REMOTE)", len(unique))
+        return list(unique.values())
+
+    def _fetch_listing_pages(self, base_params: dict) -> List[dict]:
         stubs: List[dict] = []
         page = 0
 
@@ -75,15 +94,19 @@ class RabotaParser:
             if self.max_pages and page >= self.max_pages:
                 break
 
-            params = {
-                "schedule": "remote",
-                "area": "16",
-                "page": str(page),
-            }
+            params = {**base_params, "page": str(page)}
             url = f"{SEARCH_URL}?{urlencode(params)}"
             logger.info("Rabota.by: страница %s — %s", page, url)
             response = self.session.get(url, timeout=30)
             response.raise_for_status()
+
+            if "HH-Lux-InitialState" not in response.text:
+                logger.warning(
+                    "Rabota.by: нет JSON на странице (status=%s, %s байт)",
+                    response.status_code,
+                    len(response.text),
+                )
+                break
 
             raw_items = self._extract_items(response.text)
             if not raw_items:
@@ -96,9 +119,7 @@ class RabotaParser:
 
             page += 1
 
-        unique = {stub["external_id"]: stub for stub in stubs}
-        logger.info("Rabota.by: в листинге %s кандидатов (только REMOTE)", len(unique))
-        return list(unique.values())
+        return stubs
 
     def _extract_items(self, html: str) -> List[Dict[str, Any]]:
         match = re.search(
@@ -119,8 +140,8 @@ class RabotaParser:
                     "vacancyId" in obj
                     and "name" in obj
                     and "company" in obj
-                    and is_strictly_remote_rabota(obj)
-                    and self._is_belarus(obj)
+                    and is_remote_format_only_rabota(obj)
+                    and self._is_belarus_listing(obj)
                 ):
                     items.append(obj)
                 for value in obj.values():
@@ -133,15 +154,15 @@ class RabotaParser:
         return items
 
     @staticmethod
-    def _is_belarus(item: Dict[str, Any]) -> bool:
-        company = item.get("company") or {}
-        country_id = company.get("@countryId")
-        if country_id == BELARUS_COUNTRY_ID:
-            return True
+    def _is_belarus_listing(item: Dict[str, Any]) -> bool:
+        """Листинг уже с area=16 (Беларусь) на rabota.by — не отсекаем по стране HQ."""
         host = item.get("displayHost") or ""
         links = item.get("links") or {}
         desktop = links.get("desktop", "")
-        return host == "rabota.by" or "rabota.by" in desktop
+        if host == "rabota.by" or "rabota.by" in desktop:
+            return True
+        area = item.get("area") or {}
+        return bool(area.get("name"))
 
     def _to_stub(self, item: Dict[str, Any]) -> Optional[dict]:
         vacancy_id = str(item.get("vacancyId", "")).strip()

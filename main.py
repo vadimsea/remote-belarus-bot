@@ -93,7 +93,14 @@ def collect_vacancies(settings: Settings, session, source: str):
     return all_vacancies
 
 
-def refresh_queue(storage: VacancyStorage, settings: Settings, session, source: str) -> int:
+def refresh_queue(
+    storage: VacancyStorage,
+    settings: Settings,
+    session,
+    source: str,
+    *,
+    replace: bool = False,
+) -> tuple[int, list]:
     vacancies = collect_vacancies(settings, session, source)
     unique = {v.uid: v for v in vacancies}
     new_uids = storage.filter_new(unique.keys())
@@ -102,14 +109,21 @@ def refresh_queue(storage: VacancyStorage, settings: Settings, session, source: 
     rabota_n = sum(1 for v in candidates if v.source == "rabota")
     logger.info("Кандидаты: praca=%s, rabota=%s", praca_n, rabota_n)
     ranked = pick_best_vacancies(candidates, limit=settings.queue_size)
-    storage.clear_queue()
-    added = storage.enqueue_candidates(ranked)
+    if replace and ranked:
+        storage.clear_queue()
+    added = storage.enqueue_candidates(ranked) if ranked else 0
     logger.info(
         "В очередь: praca=%s, rabota=%s",
         sum(1 for v, _, _ in ranked if v.source == "praca"),
         sum(1 for v, _, _ in ranked if v.source == "rabota"),
     )
-    return added
+    if candidates and not ranked:
+        logger.warning(
+            "Из %s новых вакансий ни одна не IT/маркетинг — очередь не трогаем (%s в очереди)",
+            len(candidates),
+            storage.queue_size(),
+        )
+    return added, ranked
 
 
 def run_promo(
@@ -164,7 +178,7 @@ def main() -> int:
         logger.error("%s", exc)
         return 1
 
-    storage = VacancyStorage(settings.db_path)
+    storage = VacancyStorage(settings.db_path, seen_ttl_days=settings.seen_ttl_days)
 
     if args.reset_db:
         storage.reset_all()
@@ -275,8 +289,15 @@ def main() -> int:
         format_schedule(slot_times),
     )
 
+    ranked_from_refresh: list = []
     if args.refresh_queue or storage.queue_size() < 3:
-        added = refresh_queue(storage, settings, session, args.source)
+        added, ranked_from_refresh = refresh_queue(
+            storage,
+            settings,
+            session,
+            args.source,
+            replace=args.refresh_queue,
+        )
         logger.info("Очередь обновлена: +%s вакансий (в очереди %s)", added, storage.queue_size())
 
     publisher = TelegramPublisher(
@@ -309,10 +330,21 @@ def main() -> int:
         picked = storage.pop_best_candidate(allowed_uids=allowed, prefer_source=prefer)
 
         if not picked and not args.dry_run:
-            added = refresh_queue(storage, settings, session, args.source)
+            added, ranked_from_refresh = refresh_queue(
+                storage,
+                settings,
+                session,
+                args.source,
+                replace=False,
+            )
             logger.info("Очередь пуста, повторный сбор: +%s", added)
             allowed = storage.filter_new(storage.queue_uids())
             picked = storage.pop_best_candidate(allowed_uids=allowed, prefer_source=prefer)
+
+        if not picked and ranked_from_refresh:
+            vacancy, score, category_raw = ranked_from_refresh.pop(0)
+            category: ProfessionCategory = category_raw  # type: ignore[assignment]
+            picked = (vacancy, score, category)
 
         if not picked:
             logger.warning("Нет вакансий для слота %s — остановка", slot.label)
