@@ -55,11 +55,10 @@ jobs:
           fi
 
       - name: Commit bot database
-        if: github.event.inputs.dry_run != 'true' && github.event_name != 'push'
+        if: github.event.inputs.dry_run != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin main
           if [ ! -f data/seen.db ]; then
             echo "No database file to save"
             exit 0
@@ -70,4 +69,5 @@ jobs:
             exit 0
           fi
           git commit -m "chore: bot state [skip ci]"
+          git pull --rebase origin main
           git push
