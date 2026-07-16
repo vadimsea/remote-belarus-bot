@@ -1,52 +1,190 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta
+from typing import Optional, Sequence
 
 SITE_URL = "https://vadzim.by"
+ATEN_URL = "https://vadzim.by/aten/"
+HOUSING_URL = "https://t.me/minsk_housing"
 CHANNEL_URL = "https://t.me/vadzimby_live"
+PROGRAMMER_BOT_URL = "https://t.me/vadzim_by_programmer_bot"
+
+PROMO_WINDOW = timedelta(minutes=35)
+PROMO_INTERVAL_START = date(2026, 7, 1)
+
+
+@dataclass(frozen=True)
+class PromoButton:
+    text: str
+    url: str
 
 
 @dataclass(frozen=True)
 class PromoPost:
+    key: str
     text: str
-    site_url: str
-    channel_url: str
-    site_button: str = "Услуги на vadzim.by"
-    channel_button: str = "Канал: ИИ · Маркетинг · Дизайн"
+    buttons: tuple[PromoButton, ...]
 
 
-def build_daily_promo(
+@dataclass(frozen=True)
+class PromoCampaign:
+    key: str
+    text: str
+    button_text: str
+    url: str
+    at: time
+    weekdays: Optional[set[int]] = None
+    interval_days: Optional[int] = None
+
+    def is_due(self, current: datetime) -> bool:
+        if self.weekdays is not None and current.weekday() not in self.weekdays:
+            return False
+        if self.interval_days is not None:
+            days_since_start = (current.date() - PROMO_INTERVAL_START).days
+            if days_since_start < 0 or days_since_start % self.interval_days != 0:
+                return False
+        start = datetime.combine(current.date(), self.at, tzinfo=current.tzinfo)
+        return start <= current <= start + PROMO_WINDOW
+
+    def build_post(self) -> PromoPost:
+        return PromoPost(
+            key=self.key,
+            text=self.text,
+            buttons=(PromoButton(self.button_text, self.url),),
+        )
+
+
+def build_campaigns(
     *,
     site_url: str = SITE_URL,
     channel_url: str = CHANNEL_URL,
-) -> PromoPost:
-    """Рекламный пост: vadzim.by + канал @vadzimby_live."""
-    text = """<b>Сайты и digital под ключ</b>
-<i>Vadzim.by · Минск · Беларусь</i>
+) -> tuple[PromoCampaign, ...]:
+    site_url = site_url.rstrip("/")
+    channel_url = channel_url.strip() or CHANNEL_URL
 
-Нужен сайт, который приносит заявки и лиды? Собираю решения под ключ — от лендинга до интернет-магазина.
+    return (
+        PromoCampaign(
+            key="services_daily",
+            at=time(9, 0),
+            url=site_url,
+            button_text="Услуги vadzim.by",
+            text="""<b>Digital для бизнеса от vadzim.by</b>
 
-<b>Услуги</b>
-• Веб-разработка — WordPress, Tilda, чистый код, CRM
-• Дизайн — понятная структура, акценты, сильные CTA
-• Маркетинг — реклама, аналитика, рост конверсии
-• SEO — аудит, продвижение, регулярные отчёты
+Сайт, реклама, SEO, CRM, Telegram-боты и дизайн — всё это можно собрать в одну понятную digital-систему для бизнеса.
 
-<b>Подход</b>
-• Сначала цель и аудитория, затем макет и вёрстка
-• Прозрачные этапы — от идеи до запуска и поддержки
-• Адаптив, скорость загрузки, удобная админка
+Посмотрите услуги vadzim.by:""",
+        ),
+        PromoCampaign(
+            key="aten_daily_1",
+            at=time(12, 30),
+            url=ATEN_URL,
+            button_text="Открыть ATEN",
+            text="""<b>ATEN — мессенджер от vadzim.by</b>
 
-<b>Стоимость</b>
-Готовые решения — от <b>1 500 BYN</b>. Индивидуальные проекты — по брифу.
+Знакомьтесь с ATEN — мессенджером от vadzim.by.
+Личные сообщения, группы, каналы, реакции и спокойный интерфейс без лишней суеты.""",
+        ),
+        PromoCampaign(
+            key="aten_daily_2",
+            at=time(18, 30),
+            url=ATEN_URL,
+            button_text="Попробовать ATEN",
+            text="""<b>ATEN / Атон</b>
 
-<b>Канал для практики в digital</b>
-<b>ИИ × Маркетинг × Дизайн</b> — тренды, инструменты и рабочие приёмы без лишней теории. Если вы в IT, маркетинге или дизайне — загляните.
+Нужен мессенджер без бесконечной ленты и отвлечений?
+ATEN помогает общаться по делу: личные чаты, группы, каналы и понятный веб-вход без установки.""",
+        ),
+        PromoCampaign(
+            key="minsk_housing_weekly",
+            at=time(11, 30),
+            weekdays={6},
+            url=HOUSING_URL,
+            button_text="Недвижимость в Минске",
+            text="""<b>Недвижимость в Минске</b>
 
-Подробности и подписка — кнопки ниже."""
+Ищете жильё в Минске или следите за рынком недвижимости?
+Подписывайтесь на группу с объявлениями и полезной информацией:""",
+        ),
+        PromoCampaign(
+            key="vadzimby_live_tue",
+            at=time(16, 30),
+            weekdays={1},
+            url=channel_url,
+            button_text="ИИ, маркетинг и дизайн",
+            text="""<b>ИИ, маркетинг и дизайн</b>
 
-    return PromoPost(
-        text=text,
-        site_url=site_url.rstrip("/"),
+Если интересны нейросети, продвижение, визуал, сайты и digital для бизнеса — вам сюда:""",
+        ),
+        PromoCampaign(
+            key="vadzimby_live_fri",
+            at=time(16, 30),
+            weekdays={4},
+            url=channel_url,
+            button_text="Перейти в vadzim.by live",
+            text="""<b>ИИ, маркетинг и дизайн</b>
+
+Если интересны нейросети, продвижение, визуал, сайты и digital для бизнеса — вам сюда:""",
+        ),
+        PromoCampaign(
+            key="programmer_bot_every_2_days",
+            at=time(14, 30),
+            interval_days=2,
+            url=PROGRAMMER_BOT_URL,
+            button_text="Открыть бота",
+            text="""<b>Помощник программиста</b>
+
+Бот для тех, кто изучает программирование. Помогает писать код, объясняет термины простыми словами и помогает разобраться в HTML, CSS, JavaScript, Python и других темах.""",
+        ),
+    )
+
+
+def due_promo_posts(
+    *,
+    current: datetime,
+    posted_keys: set[str],
+    site_url: str = SITE_URL,
+    channel_url: str = CHANNEL_URL,
+    force: bool = False,
+) -> list[PromoPost]:
+    campaigns = build_campaigns(site_url=site_url, channel_url=channel_url)
+    due: list[PromoPost] = []
+    for campaign in campaigns:
+        if campaign.key in posted_keys and not force:
+            continue
+        if force or campaign.is_due(current):
+            due.append(campaign.build_post())
+    return due
+
+
+def next_promo_hint(
+    *,
+    current: datetime,
+    posted_keys: set[str],
+    site_url: str = SITE_URL,
+    channel_url: str = CHANNEL_URL,
+) -> Optional[str]:
+    candidates: list[datetime] = []
+    campaigns: Sequence[PromoCampaign] = build_campaigns(
+        site_url=site_url,
         channel_url=channel_url,
     )
+    for days_ahead in range(8):
+        day = current.date() + timedelta(days=days_ahead)
+        for campaign in campaigns:
+            if days_ahead == 0 and campaign.key in posted_keys:
+                continue
+            target = datetime.combine(day, campaign.at, tzinfo=current.tzinfo)
+            if target <= current:
+                continue
+            if campaign.weekdays is not None and target.weekday() not in campaign.weekdays:
+                continue
+            if campaign.interval_days is not None:
+                days_since_start = (target.date() - PROMO_INTERVAL_START).days
+                if days_since_start < 0 or days_since_start % campaign.interval_days != 0:
+                    continue
+            candidates.append(target)
+
+    if not candidates:
+        return None
+    return min(candidates).strftime("%d.%m %H:%M")

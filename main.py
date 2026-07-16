@@ -12,13 +12,11 @@ from remote_jobs.http_client import make_session
 from remote_jobs.parsers import PracaParser, RabotaParser
 from remote_jobs.professions import ProfessionCategory
 from remote_jobs.quality import pick_best_vacancies
-from remote_jobs.promo import build_daily_promo
+from remote_jobs.promo import due_promo_posts, next_promo_hint
 from remote_jobs.schedule import (
     format_schedule,
     get_due_slots_to_publish,
     get_slot_to_publish,
-    is_promo_due,
-    is_promo_in_window,
     next_slot_hint,
     now_minsk,
     slots_from_times,
@@ -66,12 +64,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--promo",
         action="store_true",
-        help="Опубликовать рекламу vadzim.by + @vadzimby_live (раз в день)",
+        help="Проверить и опубликовать рекламные посты по расписанию",
     )
     parser.add_argument(
         "--force-promo",
         action="store_true",
-        help="Реклама даже если уже была сегодня или раньше 09:00",
+        help="Опубликовать рекламные посты без проверки времени и отметок в БД",
     )
     return parser.parse_args()
 
@@ -135,23 +133,36 @@ def run_promo(
     force: bool,
 ) -> int:
     current = now_minsk()
-    already = storage.promo_posted_today()
-    if not is_promo_due(promo_posted_today=already, now=current, force=force):
-        if already:
-            logger.info("Реклама vadzim.by уже опубликована сегодня")
-        else:
-            logger.info(
-                "Реклама с 09:00 (Минск). Сейчас %s — рано.",
-                current.strftime("%H:%M"),
-            )
-        return 0
-
-    promo = build_daily_promo(
+    posted_keys = storage.promo_keys_posted_today()
+    due_posts = due_promo_posts(
+        current=current,
+        posted_keys=posted_keys,
         site_url=settings.promo_site_url,
         channel_url=settings.promo_channel_url,
+        force=force,
     )
+    due_posts = due_posts[:1]
+    if not due_posts:
+        hint = next_promo_hint(
+            current=current,
+            posted_keys=posted_keys,
+            site_url=settings.promo_site_url,
+            channel_url=settings.promo_channel_url,
+        )
+        logger.info(
+            "Рекламных постов к публикации нет. Сейчас %s (Минск).%s",
+            current.strftime("%H:%M"),
+            f" Следующее окно: {hint}" if hint else "",
+        )
+        return 0
+
     if dry_run:
-        logger.info("Реклама (dry-run):\n%s", promo.text.replace("<b>", "").replace("</b>", ""))
+        for promo in due_posts:
+            logger.info(
+                "Реклама %s (dry-run):\n%s",
+                promo.key,
+                promo.text.replace("<b>", "").replace("</b>", ""),
+            )
         return 0
 
     publisher = TelegramPublisher(
@@ -160,12 +171,13 @@ def run_promo(
         post_delay=settings.telegram_post_delay,
         session=session,
     )
-    message_id = publisher.publish_promo(promo)
-    if not message_id:
-        logger.error("Не удалось опубликовать рекламу")
-        return 1
-    storage.mark_promo_posted(message_id)
-    logger.info("Реклама опубликована, message_id=%s", message_id)
+    for promo in due_posts:
+        message_id = publisher.publish_promo(promo)
+        if not message_id:
+            logger.error("Не удалось опубликовать рекламу %s", promo.key)
+            return 1
+        storage.mark_promo_posted(message_id, promo.key)
+        logger.info("Реклама %s опубликована, message_id=%s", promo.key, message_id)
     return 0
 
 
@@ -215,23 +227,18 @@ def main() -> int:
         storage.close()
         return code
 
-    # Реклама только 09:00–09:35 Минск (не при каждом cron-запуске)
+    # Рекламные посты публикуются только в своих окнах, без привязки к слотам вакансий.
     if not args.dry_run and not args.reset_db and not args.clear_channel:
-        current = now_minsk()
-        if args.force_promo or (
-            not storage.promo_posted_today()
-            and is_promo_in_window(current)
-        ):
-            promo_code = run_promo(
-                settings,
-                storage,
-                session,
-                dry_run=False,
-                force=args.force_promo,
-            )
-            if promo_code != 0:
-                storage.close()
-                return promo_code
+        promo_code = run_promo(
+            settings,
+            storage,
+            session,
+            dry_run=False,
+            force=args.force_promo,
+        )
+        if promo_code != 0:
+            storage.close()
+            return promo_code
 
     if args.reset_db and not args.dry_run and not args.force_slot:
         storage.close()

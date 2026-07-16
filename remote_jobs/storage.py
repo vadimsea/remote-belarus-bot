@@ -66,6 +66,17 @@ class VacancyStorage:
         )
         self._conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS promo_posts (
+                day TEXT NOT NULL,
+                promo_key TEXT NOT NULL,
+                message_id INTEGER,
+                posted_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (day, promo_key)
+            )
+            """
+        )
+        self._conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS candidate_queue (
                 uid TEXT PRIMARY KEY,
                 score REAL NOT NULL,
@@ -399,22 +410,53 @@ class VacancyStorage:
 
         return try_pick(None)
 
-    def promo_posted_today(self, day: Optional[str] = None) -> bool:
+    def promo_keys_posted_today(self, day: Optional[str] = None) -> set[str]:
         day = _day_key(day)
+        rows = self._conn.execute(
+            "SELECT promo_key FROM promo_posts WHERE day = ?",
+            (day,),
+        ).fetchall()
+        return {str(row[0]) for row in rows}
+
+    def promo_posted_today(
+        self,
+        promo_key: str = "legacy_daily_promo",
+        day: Optional[str] = None,
+    ) -> bool:
+        day = _day_key(day)
+        if promo_key != "legacy_daily_promo":
+            row = self._conn.execute(
+                "SELECT 1 FROM promo_posts WHERE day = ? AND promo_key = ?",
+                (day, promo_key),
+            ).fetchone()
+            return row is not None
         row = self._conn.execute(
             "SELECT 1 FROM daily_promo WHERE day = ?",
             (day,),
         ).fetchone()
         return row is not None
 
-    def mark_promo_posted(self, message_id: int, day: Optional[str] = None) -> None:
+    def mark_promo_posted(
+        self,
+        message_id: int,
+        promo_key: str = "legacy_daily_promo",
+        day: Optional[str] = None,
+    ) -> None:
         day = _day_key(day)
+        if promo_key == "legacy_daily_promo":
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO daily_promo (day, message_id)
+                VALUES (?, ?)
+                """,
+                (day, message_id),
+            )
         self._conn.execute(
             """
-            INSERT OR REPLACE INTO daily_promo (day, message_id)
-            VALUES (?, ?)
+            INSERT OR REPLACE INTO promo_posts (day, promo_key, message_id)
+            VALUES (?, ?, ?)
             """,
-            (day, message_id),
+            (day, promo_key, message_id),
         )
         self._conn.commit()
 
@@ -424,6 +466,7 @@ class VacancyStorage:
         self._conn.execute("DELETE FROM published_messages")
         self._conn.execute("DELETE FROM candidate_queue")
         self._conn.execute("DELETE FROM daily_promo")
+        self._conn.execute("DELETE FROM promo_posts")
         self._conn.execute("DELETE FROM daily_slot_schedule")
         self._conn.commit()
 

@@ -99,8 +99,8 @@ class TelegramPublisher:
     def publish_promo(self, promo: PromoPost) -> Optional[int]:
         keyboard = {
             "inline_keyboard": [
-                [{"text": promo.site_button, "url": promo.site_url}],
-                [{"text": promo.channel_button, "url": promo.channel_url}],
+                [{"text": button.text, "url": button.url}]
+                for button in promo.buttons
             ]
         }
         return self._send_message(promo.text, reply_markup=keyboard)
