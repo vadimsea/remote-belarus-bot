@@ -75,24 +75,15 @@ def build_campaigns(
 Посмотрите услуги vadzim.by:""",
         ),
         PromoCampaign(
-            key="aten_daily_1",
+            key="aten_weekly",
             at=time(12, 30),
+            weekdays={4},
             url=ATEN_URL,
             button_text="Открыть ATEN",
             text="""<b>ATEN — мессенджер от vadzim.by</b>
 
 Знакомьтесь с ATEN — мессенджером от vadzim.by.
 Личные сообщения, группы, каналы, реакции и спокойный интерфейс без лишней суеты.""",
-        ),
-        PromoCampaign(
-            key="aten_daily_2",
-            at=time(18, 30),
-            url=ATEN_URL,
-            button_text="Попробовать ATEN",
-            text="""<b>ATEN / Атон</b>
-
-Нужен мессенджер без бесконечной ленты и отвлечений?
-ATEN помогает общаться по делу: личные чаты, группы, каналы и понятный веб-вход без установки.""",
         ),
         PromoCampaign(
             key="minsk_housing_weekly",
