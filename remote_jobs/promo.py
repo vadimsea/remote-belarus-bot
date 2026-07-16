@@ -146,7 +146,11 @@ def due_promo_posts(
     channel_url: str = CHANNEL_URL,
     force: bool = False,
 ) -> list[PromoPost]:
-    campaigns = build_campaigns(site_url=site_url, channel_url=channel_url)
+    campaigns = sorted(
+        build_campaigns(site_url=site_url, channel_url=channel_url),
+        key=lambda campaign: (campaign.at.hour, campaign.at.minute),
+        reverse=True,
+    )
     due: list[PromoPost] = []
     for campaign in campaigns:
         if campaign.key in posted_keys and not force:
