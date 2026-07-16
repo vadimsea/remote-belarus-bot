@@ -10,7 +10,6 @@ HOUSING_URL = "https://t.me/minsk_housing"
 CHANNEL_URL = "https://t.me/vadzimby_live"
 PROGRAMMER_BOT_URL = "https://t.me/vadzim_by_programmer_bot"
 
-PROMO_WINDOW = timedelta(minutes=35)
 PROMO_INTERVAL_START = date(2026, 7, 1)
 
 
@@ -45,7 +44,7 @@ class PromoCampaign:
             if days_since_start < 0 or days_since_start % self.interval_days != 0:
                 return False
         start = datetime.combine(current.date(), self.at, tzinfo=current.tzinfo)
-        return start <= current <= start + PROMO_WINDOW
+        return current >= start
 
     def build_post(self) -> PromoPost:
         return PromoPost(
