@@ -23,7 +23,8 @@ DAY_WINDOW_END = time(19, 0)
 MIN_SLOT_GAP = timedelta(minutes=50)
 GRACE_AFTER_LAST = timedelta(minutes=45)
 CATCHUP_UNTIL = time(23, 0)
-SCHEDULE_SEED_SUFFIX = "v1"
+SCHEDULE_SEED_SUFFIX = "v2"
+LATEST_FIRST_SLOT = time(11, 30)
 
 
 @dataclass(frozen=True)
@@ -59,13 +60,17 @@ def generate_random_slot_times(
     if span < required:
         raise ValueError("Слишком узкое окно для заданного числа слотов и минимального интервала")
 
+    segment = span / count
     points: List[int] = []
-    low = start_min
-    for remaining in range(count, 0, -1):
-        high = end_min - (remaining - 1) * gap_min
-        minute = rng.randint(low, high)
-        points.append(minute)
-        low = minute + gap_min
+    for index in range(count):
+        low = round(start_min + index * segment)
+        high = round(start_min + (index + 1) * segment) - 1
+        if points:
+            low = max(low, points[-1] + gap_min)
+        high = min(high, end_min - (count - index - 1) * gap_min)
+        if high < low:
+            high = low
+        points.append(rng.randint(low, high))
 
     return [_minutes_to_time(m) for m in points]
 

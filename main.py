@@ -81,13 +81,19 @@ def collect_vacancies(settings: Settings, session, source: str):
     }
     all_vacancies = []
     if source in ("all", "praca"):
-        all_vacancies.extend(
-            PracaParser(session, max_pages=settings.max_pages_praca, **parser_kwargs).fetch_vacancies()
-        )
+        try:
+            all_vacancies.extend(
+                PracaParser(session, max_pages=settings.max_pages_praca, **parser_kwargs).fetch_vacancies()
+            )
+        except Exception as exc:
+            logger.exception("Praca.by упал, продолжаем с другими источниками: %s", exc)
     if source in ("all", "rabota"):
-        all_vacancies.extend(
-            RabotaParser(session, max_pages=settings.max_pages_rabota, **parser_kwargs).fetch_vacancies()
-        )
+        try:
+            all_vacancies.extend(
+                RabotaParser(session, max_pages=settings.max_pages_rabota, **parser_kwargs).fetch_vacancies()
+            )
+        except Exception as exc:
+            logger.exception("Rabota.by упал, продолжаем с другими источниками: %s", exc)
     return all_vacancies
 
 
@@ -226,19 +232,6 @@ def main() -> int:
         )
         storage.close()
         return code
-
-    # Рекламные посты публикуются только в своих окнах, без привязки к слотам вакансий.
-    if not args.dry_run and not args.reset_db and not args.clear_channel:
-        promo_code = run_promo(
-            settings,
-            storage,
-            session,
-            dry_run=False,
-            force=args.force_promo,
-        )
-        if promo_code != 0:
-            storage.close()
-            return promo_code
 
     if args.reset_db and not args.dry_run and not args.force_slot:
         storage.close()
@@ -408,6 +401,17 @@ def main() -> int:
 
     if published_count:
         logger.info("Готово: опубликовано вакансий за запуск: %s", published_count)
+        if not args.dry_run and args.force_slot is None:
+            promo_code = run_promo(
+                settings,
+                storage,
+                session,
+                dry_run=False,
+                force=args.force_promo,
+            )
+            if promo_code != 0:
+                storage.close()
+                return promo_code
     storage.close()
     return 0
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Set
 
 from .models import Vacancy
-from .schedule import SLOTS_PER_DAY, generate_random_slot_times, today_minsk
+from .schedule import LATEST_FIRST_SLOT, SLOTS_PER_DAY, generate_random_slot_times, today_minsk
 
 
 def _day_key(day: Optional[str] = None) -> str:
@@ -159,7 +159,7 @@ class VacancyStorage:
     ) -> List[time]:
         day = _day_key(day)
         existing = self.get_daily_schedule(day)
-        if len(existing) >= count:
+        if len(existing) >= count and existing[0] <= LATEST_FIRST_SLOT:
             return existing[:count]
 
         times = generate_random_slot_times(date.fromisoformat(day), count)
