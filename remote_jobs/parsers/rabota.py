@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import html
+import html as html_module
 import json
 import logging
 import re
@@ -131,7 +131,7 @@ class RabotaParser:
             logger.warning("Rabota.by: не найден JSON состояния на странице")
             return []
 
-        state = json.loads(match.group(1))
+        state = json.loads(html_module.unescape(match.group(1)))
         items: List[Dict[str, Any]] = []
 
         def walk(obj: Any) -> None:
@@ -166,7 +166,7 @@ class RabotaParser:
 
     def _to_stub(self, item: Dict[str, Any]) -> Optional[dict]:
         vacancy_id = str(item.get("vacancyId", "")).strip()
-        title = html.unescape((item.get("name") or "").strip())
+        title = html_module.unescape((item.get("name") or "").strip())
         if not vacancy_id or not title:
             return None
 

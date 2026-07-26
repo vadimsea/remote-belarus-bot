@@ -75,7 +75,24 @@ IT_KEYWORDS = (
     "продуктовый дизайнер",
     "1с-программист",
     "1c-программист",
+    "программист 1с",
+    "программист 1c",
+    "стажер-программист",
+    "стажёр-программист",
+    "битрикс",
     "bitrix",
+    "bitrix24",
+    "crm-систем",
+    "crm систем",
+    "crm‑систем",
+    "amoCRM",
+    "amocrm",
+    "внедрению crm",
+    "внедрение crm",
+    "внедрению битрикс",
+    "внедрение битрикс",
+    "автоматизация бизнес",
+    "автоматизацией бизнес",
     "wordpress",
     "wordpress",
     "it-специалист",
@@ -251,7 +268,7 @@ def _matches(text: str, keywords: tuple[str, ...]) -> bool:
             if keyword in text:
                 return True
         else:
-            if re.search(rf"(?<![\w-]){re.escape(keyword)}(?![\w-])", text):
+            if re.search(rf"(?<!\w){re.escape(keyword)}(?!\w)", text):
                 return True
     return False
 

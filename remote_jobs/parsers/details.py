@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import html
 import logging
 import re
 import time
@@ -86,7 +87,7 @@ class RabotaDetailFetcher:
             logger.debug("Rabota %s: JSON состояния не найден", vacancy_id)
             return None
 
-        state = json.loads(match.group(1))
+        state = json.loads(html.unescape(match.group(1)))
         vacancy = state.get("vacancyView") or state.get("vacancy")
         if not vacancy or str(vacancy.get("vacancyId")) != str(vacancy_id):
             vacancy = self._find_vacancy(state, vacancy_id)
